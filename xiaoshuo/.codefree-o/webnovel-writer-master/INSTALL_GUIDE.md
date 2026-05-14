@@ -320,3 +320,94 @@ superpowers/
 | 插件位置 | `E:\01gx\CFO\xiaoshuo\.codefree-o\webnovel-writer-master\` |
 | 项目配置 | `E:\01gx\CFO\xiaoshuo\.codefree-o\codefree.json` |
 | 全局配置 | `C:\Users\Administrator\.codefree-o\.config\codefree.json` |
+
+---
+
+## 10. GitHub 改好再装 vs 下载后本地改
+
+### 核心结论
+
+**跟安装方式没关系，跟插件源码有没有适配 CodeFree-O 有关系。**
+
+不管 GitHub 改好再装，还是下载后本地改，效果一样。关键是：原始插件是为 Claude Code 写的，不是为 CodeFree-O（OpenCode）写的，所以有两个结构性缺陷必须修：
+
+| 问题 | 原因 | 谁的锅 |
+|------|------|--------|
+| `package.json` 的 `main` 指向空 `index.js` | 插件作者没写 OpenCode 入口 | 源码问题 |
+| skills 路径 `../skills` 解析错误 | `.opencode/plugins/` 多了一层目录 | 源码问题 |
+
+### 两种策略对比
+
+| | GitHub 改好再装 | 下载后本地改 |
+|--|--|--|
+| **优点** | 一劳永逸，别人也能用；`git pull` 更新不丢改动 | 快速验证；不用等 PR 合并 |
+| **缺点** | 需要 fork + PR 权限；原作者不合并就白改 | 每次更新覆盖你的修改 |
+| **适合** | 你是插件作者/贡献者 | 你只是使用者，想快速跑起来 |
+
+### 建议
+
+1. **如果你是插件作者**：直接在 GitHub 源码修好，加一个 `.opencode/plugins/<name>.js` 入口，改 `package.json` 的 `main`。这样所有人装完就能用。
+
+2. **如果你只是使用者**：下载后本地改（就像我们这次做的），但注意：
+   - 不要 `git pull` 更新覆盖修改
+   - 或者写个 patch 脚本，更新后自动重新应用修改
+
+3. **最理想**：给原作者提个 Issue/PR，让他原生支持 OpenCode 格式（加 `.opencode/` 目录和入口文件），这样以后 `codefree-o plugin install` 就能直接用。
+
+**一句话：问题不在安装方式，在于源码没适配 CodeFree-O 的插件规范。**
+
+---
+
+## 11. 本次安装完整过程回顾
+
+### 背景
+
+将 `webnovel-writer` 插件（GitHub: lingfengQAQ/webnovel-writer）安装到 CodeFree-O 中，使 7 个 skills 能被识别和加载。
+
+### 根因分析
+
+webnovel-writer 插件无法加载的两个关键问题：
+
+1. **`package.json` 的 `main` 字段指向 `"index.js"`**（空导出 `export default {}`），而不是 `.opencode/plugins/webnovel-writer.js`（真正的插件入口）
+2. **插件 JS 文件中 skills 路径解析错误**：`path.resolve(__dirname, '../skills')` 解析到 `.opencode/skills/`（不存在），实际 skills 在插件根目录的 `skills/` 下，应为 `../../skills`
+
+### 参考对象
+
+成功安装的 superpowers 插件（GitHub: obra/superpowers）：
+- `package.json` → `"main": ".opencode/plugins/superpowers.js"` ✅
+- `.opencode/plugins/superpowers.js` → 导出 `SuperpowersPlugin`，通过 `config` hook 注入 skills 路径，通过 `experimental.chat.messages.transform` hook 注入 bootstrap 上下文
+- 缓存位置：`C:\Users\Administrator\.codefree-o\.cache\packages\git+https_\github.com\obra\superpowers.git\`
+
+### 修复操作
+
+| 步骤 | 操作 | 状态 |
+|------|------|------|
+| 1 | 修复 `package.json`：`main` 从 `"index.js"` 改为 `".opencode/plugins/webnovel-writer.js"` | ✅ |
+| 2 | 重写 `.opencode/plugins/webnovel-writer.js`：修正 skills 路径为 `../../skills`，添加 `config` hook 和 `experimental.chat.messages.transform` hook | ✅ |
+| 3 | 安装 Python 依赖：`pip install aiohttp filelock fastapi watchdog` | ✅ |
+| 4 | 验证：`codefree-o debug skill` 显示 7 个 skills | ✅ |
+| 5 | 重启 CodeFree-O 会话使变更生效 | ⚠️ 需用户操作 |
+
+### 验证结果
+
+`codefree-o debug skill` 输出 7 个 skills：
+
+1. `webnovel-init` — 深度初始化网文项目
+2. `webnovel-plan` — 生成卷纲、时间线和章纲
+3. `webnovel-write` — 产出可发布章节
+4. `webnovel-review` — 章节质量审查
+5. `webnovel-query` — 查询项目设定、角色、力量体系等
+6. `webnovel-learn` — 提取成功模式写入 project_memory.json
+7. `webnovel-dashboard` — 启动只读小说管理面板
+
+### 关键文件清单
+
+| 文件 | 说明 |
+|------|------|
+| `E:\01gx\CFO\xiaoshuo\.codefree-o\webnovel-writer-master\package.json` | 已修改：main 字段 |
+| `E:\01gx\CFO\xiaoshuo\.codefree-o\webnovel-writer-master\.opencode\plugins\webnovel-writer.js` | 已重写：修正路径、添加 hooks |
+| `E:\01gx\CFO\xiaoshuo\.codefree-o\webnovel-writer-master\index.js` | 原空入口文件（不再被引用） |
+| `E:\01gx\CFO\xiaoshuo\.codefree-o\webnovel-writer-master\skills\` | 7 个 skill 目录 |
+| `E:\01gx\CFO\xiaoshuo\.codefree-o\webnovel-writer-master\scripts\` | Python 脚本目录 |
+| `E:\01gx\CFO\xiaoshuo\.codefree-o\codefree.json` | 项目级配置 |
+| `C:\Users\Administrator\.codefree-o\.config\codefree.json` | 全局配置 |
